@@ -1,0 +1,58 @@
+import http from "http";
+import { WebSocketServer } from "ws";
+
+const PORT = process.env.PORT || 8787;
+
+const server = http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end("La Borsa server OK");
+});
+
+const wss = new WebSocketServer({ server });
+
+let rooms = {};
+
+function randomCode() {
+  return Math.random().toString(36).substring(2, 8).toUpperCase();
+}
+
+wss.on("connection", (ws) => {
+  ws.on("message", (msg) => {
+    let data;
+    try {
+      data = JSON.parse(msg);
+    } catch {
+      return;
+    }
+
+    if (data.type === "CREATE") {
+      const code = randomCode();
+      rooms[code] = [];
+      ws.room = code;
+      rooms[code].push(ws);
+      ws.send(JSON.stringify({ type: "CREATED", code }));
+    }
+
+    if (data.type === "JOIN") {
+      const code = data.code;
+      if (!rooms[code]) return;
+      ws.room = code;
+      rooms[code].push(ws);
+      ws.send(JSON.stringify({ type: "JOINED", code }));
+    }
+
+    if (data.type === "MSG") {
+      const room = ws.room;
+      if (!room) return;
+      rooms[room].forEach((client) => {
+        if (client.readyState === 1) {
+          client.send(JSON.stringify({ type: "MSG", text: data.text }));
+        }
+      });
+    }
+  });
+});
+
+server.listen(PORT, () => {
+  console.log("Server running on port", PORT);
+});
